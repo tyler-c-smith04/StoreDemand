@@ -60,48 +60,55 @@ ggsave("acf_plots.png", combo)
 storeItem <- train %>% 
   filter(store == 8, item == 30)
 
-my_recipe <- recipe(sales ~., data = storeItem) %>% 
-  step_date(date, features = 'doy') %>% 
-  step_range(date_doy, min=0, max=pi) %>% 
-  step_mutate(sinDOY=sin(date_doy), cosDOY=cos(date_doy)) %>% 
-  step_rm(date)
+my_recipe <- recipe(sales ~., data = storeItem) %>%
+  step_date(date, features="dow") %>%
+  step_date(date, features="month") %>%
+  step_date(date, features="year") %>%
+  step_date(date, features="doy") %>%
+  step_date(date, features="decimal") %>%
+  step_date(date, features = "quarter") %>%
+  step_range(date_doy, min = 0, max = pi) %>%
+  step_mutate(sinDOY = sin(date_doy), cosDOY = cos(date_doy))
 
 prepped_recipe <- prep(my_recipe)
 baked <- bake(prepped_recipe, new_data = NULL)
 baked
 
 # Random Forest -----------------------------------------------------------
-rand_forest_mod <- rand_forest(mtry = tune(),
-                               min_n=tune(),
-                               trees=1000) %>% # or 1000
+forest_mod <- rand_forest(mtry = tune(),
+                          min_n = tune(),
+                          trees = 500) %>%
   set_engine("ranger") %>%
   set_mode("regression")
 
-rand_forest_wf <- workflow() %>%
+# set workflow
+forest_workflow <- workflow() %>%
   add_recipe(my_recipe) %>%
-  add_model(rand_forest_mod)
+  add_model(forest_mod)
 
-rand_forest_tuning_grid <- grid_regular(mtry(range = c(1, (ncol(storeItem)-1))),
-                                        min_n(),
-                                        levels = 5) ## L^2 total tuning possibilities
+## Grid of tuning values
+tuning_grid <- grid_regular(mtry(range = c(1,10)),
+                            min_n(),
+                            levels = 5)
 
-## Split data for CV
-forest_folds <- vfold_cv(storeItem, v = 5, repeats = 1)
+# split data into folds
+folds <- vfold_cv(storeItem, v = 6, repeats = 1)
 
-## Run the CV
-CV_results <- rand_forest_wf %>%
-  tune_grid(resamples = forest_folds,
-            grid = rand_forest_tuning_grid,
-            metrics = metric_set(smape)) # f_meas, sens, recall, spec, precision, accuracy
+# run Cross validation
+CV_results <- forest_workflow %>%
+  tune_grid(resamples = folds,
+            grid = tuning_grid,
+            metrics = metric_set(smape))
 
-## Find Best Tuning Parameters
-forest_bestTune <- CV_results %>%
+# find best parameters
+bestTune <- CV_results %>%
   select_best("smape")
 
-forest_bestTune
+bestTune
 
-collect_metrics(CV_results) %>% 
-  filter(mtry == 2, min_n == 40) %>% 
+# collect metrics
+collect_metrics(CV_results) %>%
+  filter(mtry == 10, min_n == 30) %>%
   pull(mean)
   
 
