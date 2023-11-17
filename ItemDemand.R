@@ -5,6 +5,9 @@ library(forecast)
 library(patchwork)
 library(gridExtra)
 library(ranger)
+library(modeltime) #Extensions of tidymodels to time series
+library(timetk) #Some nice time series functions
+library(plotly)
 
 train <- vroom("./train.csv")
 test <- vroom("./test.csv")
@@ -110,6 +113,97 @@ bestTune
 collect_metrics(CV_results) %>%
   filter(mtry == 10, min_n == 30) %>%
   pull(mean)
+
+# Exponential Smoothing ---------------------------------------------------
+# Store 3, Item 17
+storeItem <- train %>% filter(store==3, item==17)
+cv_split <- time_series_split(storeItem, assess="3 months", cumulative = TRUE)
+cv_split %>%
+  tk_time_series_cv_plan() %>% #Put into a data frame
+  plot_time_series_cv_plan(date, sales, .interactive=FALSE)
   
+es_model <- exp_smoothing() %>%
+  set_engine("ets") %>%
+  fit(sales~date, data=training(cv_split))
+## Cross-validate to tune model
+cv_results <- modeltime_calibrate(es_model,
+                                  new_data = testing(cv_split))
+## Visualize CV results
+p1 <- cv_results %>%
+  modeltime_forecast(
+    new_data    = testing(cv_split),
+    actual_data = storeItem
+  )%>% plot_modeltime_forecast(.interactive=TRUE)
+
+# Evaluate the accuracy
+cv_results %>%
+  modeltime_accuracy() %>%
+  table_modeltime_accuracy(
+    .interactive = FALSE
+  )
+
+# Refit to all data then forecast
+es_fullfit <- cv_results %>% 
+  modeltime_refit(data = train)
+
+es_preds <- es_fullfit %>% 
+  modeltime_forecast(h= '3 months') %>% 
+  rename(date = .index, sales = .value) %>% 
+  select(date, sales) %>% 
+  full_join(., y = test, by = 'date') %>% 
+  select(id, sales)
+
+p2 <- es_fullfit %>% 
+  modeltime_forecast(h = '3 months', actual_data = storeItem) %>% 
+  plot_modeltime_forecast(.interactive = FALSE)
+
+# Store 4, Item 4
+storeItem2 <- train %>% filter(store==4, item==4)
+cv_split <- time_series_split(storeItem2, assess="3 months", cumulative = TRUE)
+cv_split %>%
+  tk_time_series_cv_plan() %>% #Put into a data frame
+  plot_time_series_cv_plan(date, sales, .interactive=FALSE)
+
+es_model <- exp_smoothing() %>%
+  set_engine("ets") %>%
+  fit(sales~date, data=training(cv_split))
+## Cross-validate to tune model
+cv_results <- modeltime_calibrate(es_model,
+                                  new_data = testing(cv_split))
+## Visualize CV results
+p3 <- cv_results %>%
+  modeltime_forecast(
+    new_data    = testing(cv_split),
+    actual_data = storeItem2
+  )%>% plot_modeltime_forecast(.interactive=TRUE)
+
+# Evaluate the accuracy
+cv_results %>%
+  modeltime_accuracy() %>%
+  table_modeltime_accuracy(
+    .interactive = FALSE
+  )
+
+# Refit to all data then forecast
+es_fullfit <- cv_results %>% 
+  modeltime_refit(data = train)
+
+es_preds <- es_fullfit %>% 
+  modeltime_forecast(h= '3 months') %>% 
+  rename(date = .index, sales = .value) %>% 
+  select(date, sales) %>% 
+  full_join(., y = test, by = 'date') %>% 
+  select(id, sales)
+
+p4 <- es_fullfit %>% 
+  modeltime_forecast(h = '3 months', actual_data = storeItem2) %>% 
+  plot_modeltime_forecast(.interactive = FALSE)
+
+plotly::subplot(p1,p3,p2,p4, nrows = 2)
+
+
+
+
+
 
 
