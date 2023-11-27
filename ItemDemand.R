@@ -144,7 +144,7 @@ cv_results %>%
 
 # Refit to all data then forecast
 es_fullfit <- cv_results %>% 
-  modeltime_refit(data = train)
+  modeltime_refit(data = storeItem)
 
 es_preds <- es_fullfit %>% 
   modeltime_forecast(h= '3 months') %>% 
@@ -157,6 +157,7 @@ p2 <- es_fullfit %>%
   modeltime_forecast(h = '3 months', actual_data = storeItem) %>% 
   plot_modeltime_forecast(.interactive = FALSE)
 
+p2
 # Store 4, Item 4
 storeItem2 <- train %>% filter(store==4, item==4)
 cv_split <- time_series_split(storeItem2, assess="3 months", cumulative = TRUE)
@@ -186,7 +187,7 @@ cv_results %>%
 
 # Refit to all data then forecast
 es_fullfit <- cv_results %>% 
-  modeltime_refit(data = train)
+  modeltime_refit(data = storeItem2)
 
 es_preds <- es_fullfit %>% 
   modeltime_forecast(h= '3 months') %>% 
@@ -201,9 +202,125 @@ p4 <- es_fullfit %>%
 
 plotly::subplot(p1,p3,p2,p4, nrows = 2)
 
+# Sarima ------------------------------------------------------------------
+# Store 3, Item 17
+storeItem <- train %>% filter(store==3, item==17)
 
+cv_split <- time_series_split(storeItem, assess="3 months", cumulative = TRUE)
+cv_split %>%
+  tk_time_series_cv_plan() %>% #Put into a data frame
+  plot_time_series_cv_plan(date, sales, .interactive=FALSE)
 
+arima_recipe <- recipe(sales ~date, data = storeItem)
 
+arima_model <- arima_reg(seasonal_period = 365,
+                         non_seasonal_ar = 5, # default max p to tune
+                         non_seasonal_ma = 5, # default max q to tune
+                         seasonal_ar = 2, # default max P to tune
+                         seasonal_ma = 2, # default max Q to tune
+                         non_seasonal_differences = 2, # default max d to tune
+                         seasonal_differences = 2) %>% # default max D to tune
+  set_engine('auto_arima')
 
+arima_wf <- workflow() %>% 
+  add_recipe(arima_recipe) %>% 
+  add_model(arima_model) %>% 
+  fit(data = training(cv_split))
 
+## Cross-validate to tune model
+cv_results <- modeltime_calibrate(arima_wf,
+                                  new_data = testing(cv_split))
+## Visualize CV results
+p1 <- cv_results %>%
+  modeltime_forecast(
+    new_data    = testing(cv_split),
+    actual_data = storeItem
+  )%>% plot_modeltime_forecast(.interactive=TRUE)
 
+p1
+
+# Evaluate the accuracy
+cv_results %>%
+  modeltime_accuracy() %>%
+  table_modeltime_accuracy(
+    .interactive = FALSE
+  )
+
+# Refit to all data then forecast
+arima_fullfit <- cv_results %>% 
+  modeltime_refit(data = storeItem)
+
+arima_preds <- arima_fullfit %>% 
+  modeltime_forecast(h= '3 months') %>% 
+  rename(date = .index, sales = .value) %>% 
+  select(date, sales) %>% 
+  full_join(., y = test, by = 'date') %>% 
+  select(id, sales)
+
+p2 <- es_fullfit %>% 
+  modeltime_forecast(h = '3 months', actual_data = storeItem) %>% 
+  plot_modeltime_forecast(.interactive = FALSE)
+
+p2
+
+# Store 4, Item 4
+storeItem2 <- train %>% filter(store==4, item==4)
+
+cv_split <- time_series_split(storeItem, assess="3 months", cumulative = TRUE)
+cv_split %>%
+  tk_time_series_cv_plan() %>% #Put into a data frame
+  plot_time_series_cv_plan(date, sales, .interactive=FALSE)
+
+arima_recipe2 <- recipe(sales ~date, data = storeItem2)
+
+arima_model <- arima_reg(seasonal_period = 365,
+                         non_seasonal_ar = 5, # default max p to tune
+                         non_seasonal_ma = 5, # default max q to tune
+                         seasonal_ar = 2, # default max P to tune
+                         seasonal_ma = 2, # default max Q to tune
+                         non_seasonal_differences = 2, # default max d to tune
+                         seasonal_differences = 2) %>% # default max D to tune
+  set_engine('auto_arima')
+
+arima_wf <- workflow() %>% 
+  add_recipe(arima_recipe2) %>% 
+  add_model(arima_model) %>% 
+  fit(data = training(cv_split))
+
+## Cross-validate to tune model
+cv_results <- modeltime_calibrate(arima_wf,
+                                  new_data = testing(cv_split))
+## Visualize CV results
+p3 <- cv_results %>%
+  modeltime_forecast(
+    new_data    = testing(cv_split),
+    actual_data = storeItem
+  )%>% plot_modeltime_forecast(.interactive=TRUE)
+
+p3
+
+# Evaluate the accuracy
+cv_results %>%
+  modeltime_accuracy() %>%
+  table_modeltime_accuracy(
+    .interactive = FALSE
+  )
+
+# Refit to all data then forecast
+arima_fullfit <- cv_results %>% 
+  modeltime_refit(data = storeItem2)
+
+arima_preds <- arima_fullfit %>% 
+  modeltime_forecast(h= '3 months') %>% 
+  rename(date = .index, sales = .value) %>% 
+  select(date, sales) %>% 
+  full_join(., y = test, by = 'date') %>% 
+  select(id, sales)
+
+p4 <- es_fullfit %>% 
+  modeltime_forecast(h = '3 months', actual_data = storeItem2) %>% 
+  plot_modeltime_forecast(.interactive = FALSE)
+
+p4
+
+plotly::subplot(p1,p3,p2,p4, nrows = 2)
